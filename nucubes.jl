@@ -1,109 +1,139 @@
-"""
-This is test of julia's speed of Ge-Ge-Ge gating
-Unfortunately it looks like bottleneck is the HDF loading
-and casting to DataFrame, speed is comparable of python's version
-"""
+import HDF5
+#import Profile
+#import InteractiveUtils
+#import ProfileView
+#import Printf
+#import BenchmarkTools
 
-using HDF5
-using Dates
-using DataFrames
-using StatsBase
-using Printf
+include("Nucubes.jl")
+import .Nucubes
 
-"""
-* Usage is similar to that of nucubes.py except of
-* gate_m: if empty list, a whole range is used, if length is 1, it is 
-          taken as lower limit, if length is 2 - low and high end, and
-          any other, as a list of multiplicities
-"""        
-function gegege(fin::HDF5File, gate_z::Array{Float64}, gate_y::Array{Float64}, 
-                gate_m::Array{Int64})::Array{Int64}
-    D = 4096
-    edges = [0:D;]
-    E_unit = 100
-    t_unit = 1000
 
-    M = Int64[]
-    group = fin["GeGeGe"]
-    for m_set in names(group)
-        append!(M, parse(Int64, m_set))
+function open_create_group(parent, group_name::String)
+    try
+        #HDF5.h5e_set_auto(HDF5.H5E_DEFAULT, C_NULL, C_NULL)
+        global group = parent[group_name]
+    catch 
+        global group = HDF5.create_group(parent, group_name)
     end
-
-    if size(gate_m)[1] == 0
-        multi = M
-    elseif size(gate_m)[1] == 1
-        multi = [max(gate_m[1], first(M)):last(M);]
-    elseif size(gate_m)[1] == 2
-        low_m = max(gate_m[1], first(M))
-        if low_m > last(M)
-            low_m = last(M)
-        end
-        high_m = min(gate_m[2], last(M))
-        multi = [low_m:high_m;]
-    else
-        multi = Int64[]
-        for m in gate_m
-            if first(M) < m < last(M)
-                append!(multi, m)
-            end
-        end
-    end
-   
-    matrix = zeros(Int64, D)
-    n_all = 0
-    n_processed = 0
-    for m in multi
-        dataset = group[string(m)]
-        n_all += size(dataset)[2]
-    end
-
-    t0 = Dates.Time(Dates.now())
-
-    for m in multi
-        dataset = group[string(m)]
-        chunk_size = get_chunk(dataset)[2]
-        n = size(dataset)[2]
-        left_pos = 1
-        is_something_left = true
-        while is_something_left
-            right_pos = left_pos + chunk_size - 1
-            if right_pos > n
-                right_pos = n
-                is_something_left = false
-            end
-            # Here is the bottleneck
-            data = dataset[:, left_pos:right_pos]
-
-            df = DataFrame(data', 
-                           ["E0", "E1", "E2", "t0", "t1", "t2", "pattern"])
-
-            # Multithreading has some small improvement in speed
-            Threads.@threads for loc in [[1, 2, 3], [1, 3, 2], [2, 3, 1], 
-                                         [2, 1, 3], [3, 1, 2], [3, 2, 1]]
-                sub = df[(gate_y[1] .<= df[:, loc[2]] ./ E_unit .< gate_y[2]) .& (gate_z[1] .<= df[:, loc[1]] ./ E_unit .< gate_z[2]), :]
-                h = fit(Histogram, sub[:, loc[3]] ./ E_unit, edges)
-                matrix += h.weights
-            end
-
-            n_processed += right_pos - left_pos
-
-            t1 = Dates.Time(Dates.now())
-            dt = t1 - t0
-            print("\r", round(n_processed / n_all * 100, digits=1), "% ",
-                  round(dt.value * 1e-9, digits=1), " s (",
-                  round(dt.value * 1e-9 * n_all / n_processed, digits=0), " s)")
-
-            left_pos = right_pos + 1
-        end
-    end
-    println()
-    t1 = Dates.Time(Dates.now())
-    dt = t1 - t0
-    @printf("%12d %8.5f\n", n_all, dt.value * 1.0e-9)
-    return matrix
+    return group
 end
 
-# Notice that this is for test purposes only
-fin = h5open("u238_m_ggg.h5", "r")
-matrix = gegege(fin, [241.7, 243.7], [102.1, 104.1], [])
-println(matrix)
+
+function save_h5(output_file, matrix, gate_y, gate_z, gate_m, prompt, delayed, 
+                 target, isotope, detectors, ttype)
+    y = round(Int, (gate_y[1] + gate_y[2]) / 2)
+    z = round(Int, (gate_z[1] + gate_z[2]) / 2)
+    data_name = "$z" * "_" * "$y" 
+    if size(gate_m)[1] > 0
+        data_name = data_name * "_m"
+        for mi in gate_m
+            data_name = data_name * "$mi" * "_"
+        end
+        data_name = strip(data_name, '_')
+    end
+
+    HDF5.h5e_set_auto(HDF5.H5E_DEFAULT, C_NULL, C_NULL)
+    fout = HDF5.h5open(output_file, "cw")
+    target_group = open_create_group(fout, target)
+    isotope_group = open_create_group(target_group, isotope)
+    detectors_group = open_create_group(isotope_group, detectors)
+    type_group = open_create_group(detectors_group, ttype)
+
+    dataset_created = false
+    while !dataset_created
+        try
+            d = HDF5.create_dataset(type_group, data_name, 
+                                    HDF5.datatype(Int64), 
+                                HDF5.dataspace(size(matrix)))
+            dataset_created = true
+            d[:] = matrix[:]
+            HDF5.attributes(d)["y"] = gate_y
+            HDF5.attributes(d)["z"] = gate_z
+            HDF5.attributes(d)["m"] = gate_m
+            HDF5.attributes(d)["prompt"] = prompt
+            HDF5.attributes(d)["delayed"] = delayed
+        catch
+            data_name = data_name * "*"
+        end
+    end
+    close(fout)
+
+end
+
+
+function main(gate_file::String)
+
+    for line in eachline(gate_file)
+        line = strip(line)
+        if startswith(line, "#")
+            continue
+        end
+        try
+            words = split(line)
+            input_file = String(words[1])
+            output_file = String(words[2])
+            target = String(words[3])
+            isotope = String(words[4])
+            detectors = String(words[5])
+            ttype = String(words[6])
+            gate_z = [parse(Float64, words[7]), parse(Float64, words[8])]
+            gate_y = [parse(Float64, words[9]), parse(Float64, words[10])]
+            gate_m = [parse(Int64, words[11]), parse(Int64, words[12])]
+            prompt = [parse(Float64, words[13]), parse(Float64, words[14])]
+            delayed = [parse(Float64, words[15]), parse(Float64, words[16])]
+
+            fin = HDF5.h5open(input_file, "r")
+            println("Processing gate $target $isotope $ttype z:$gate_z y:$gate_y m:$gate_m")
+            matrix = Nucubes.gegege(fin, gate_z, gate_y, prompt, delayed,
+                                    gate_m, ttype)
+            println("Total counts ", sum(matrix))
+            close(fin)
+
+            save_h5(output_file, matrix, gate_y, gate_z, gate_m, 
+                    prompt, delayed, target, isotope, detectors, ttype)
+        catch err
+            if isa(err, LoadError)
+                continue
+            end
+            throw(err)
+        end
+    end
+
+end
+
+if length(ARGS) >= 1
+    main(ARGS[1])
+else
+    println("USAGE: nucubes.jl gate_file.txt")
+    println()
+    println("Where gate_file contain the following space separated columns")
+    println("   (1) input HDF5 file name (string) ")
+    println("   (2) output HDF5 file name (string) ")
+    println("   (3) target alias (string) ")
+    println("   (4) isotope of interest  (string) ")
+    println("   (5) detectors (ggg, ggl, gll)  (string) ")
+    println("   (6) timing gate type (aaa, ppp, ppd, pdd, ddd) (string) ")
+    println("   (7) Z-axis gate begin (>=) (float) ")
+    println("   (8) Z-axis gate end (<) (float) ")
+    println("   (9) Y-axis gate begin (>=) (float) ")
+    println("   (10) Y-axis gate end (<) (float) ")
+    println("   (11) multiplicity gate begin (>=) (int) ")
+    println("   (12) multiplicity gate end (<=) (int) ")
+    println("   (13) prompt gate begin (>=) (float) ")
+    println("   (14) prompt gate end (<=) (float) ")
+    println("   (15) delayed gate begin (>=) (float) ")
+    println("   (16) delayed gate end (<=) (float) ")
+    println("  Comment lines are indicated by '#' sign at the beginning")
+end
+
+# Types warnings
+#@InteractiveUtils.code_warntype XXX
+
+# Profiling
+#@profile XXX
+#Profile.print(format=:flat)
+#ProfileView.view()
+#println("Press enter")
+#s = readline()
+
