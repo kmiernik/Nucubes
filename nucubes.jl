@@ -1,9 +1,4 @@
 import HDF5
-#import Profile
-#import InteractiveUtils
-#import ProfileView
-#import Printf
-#import BenchmarkTools
 
 include("Nucubes.jl")
 import .Nucubes
@@ -64,7 +59,7 @@ end
 
 function main(gate_file::String)
 
-    for line in eachline(gate_file)
+    for line in eachline("gates.txt")
         line = strip(line)
         if startswith(line, "#")
             continue
@@ -85,8 +80,10 @@ function main(gate_file::String)
 
             fin = HDF5.h5open(input_file, "r")
             println("Processing gate $target $isotope $ttype z:$gate_z y:$gate_y m:$gate_m")
-            matrix = Nucubes.gegege(fin, gate_z, gate_y, prompt, delayed,
-                                    gate_m, ttype)
+            
+            ggg = Nucubes.GGGate([4096], gate_z, gate_y,
+                                  prompt, delayed, ttype, 100, 1000)
+            matrix = Nucubes.process(fin, gate_m, ggg, Nucubes.select_ggg!)
             println("Total counts ", sum(matrix))
             close(fin)
 
