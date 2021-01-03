@@ -59,7 +59,7 @@ end
 
 function main(gate_file::String)
 
-    for line in eachline("gates.txt")
+    for line in eachline(gate_file)
         line = strip(line)
         if startswith(line, "#")
             continue

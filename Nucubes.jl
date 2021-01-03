@@ -7,9 +7,6 @@ module Nucubes
 using HDF5
 using Dates
 using Printf
-using DataFrames
-using StatsBase
-using BenchmarkTools
 
 export process
 export Gate
@@ -42,7 +39,7 @@ end
 
 
 struct GGTGate <: Gate
-    D::Array{Int64, 2}
+    D::Array{Int64, 1}
     y1::Int64
     y2::Int64
     z1::Int64
@@ -53,7 +50,7 @@ end
 
 
 struct TGate <: Gate
-    D::Array{Int64, 2}
+    D::Array{Int64, 1}
     E_unit::Int64
     t_unit::Int64
 end
@@ -140,7 +137,7 @@ function select_ggg!(data::Array{UInt32, 2},
                       c::GGGate)
     n = size(data)[2]
     for loc in [[1, 2, 3], [1, 3, 2], [2, 3, 1], 
-                                    [2, 1, 3], [3, 1, 2], [3, 2, 1]]
+                [2, 1, 3], [3, 1, 2], [3, 2, 1]]
         for i in 1:n
             if (   (c.y1 <= data[loc[1], i] < c.y2) 
                 && (c.z1 <= data[loc[2], i] < c.z2) 
@@ -149,7 +146,7 @@ function select_ggg!(data::Array{UInt32, 2},
                 && (c.t31 <= data[loc[3]+3, i] <= c.t32)
                )
                 k = trunc(Int64, data[loc[3], i] / c.E_unit) + 1
-                if k <= c.D[1]
+                if (k <= c.D[1])
                     matrix[k] += 1
                 end
             end
