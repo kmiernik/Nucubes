@@ -140,11 +140,11 @@ function select_ggg!(data::Array{UInt32, 2},
                      matrix::Array{Int64, 1}, 
                      c::GGGate, 
                      matrix_lock::ReentrantLock)
-    ml = zeros(size(matrix))
+    ml = [zeros(size(matrix)) for i in 1:nthreads()]
     n = size(data)[2]
     @inbounds for loc in [[1, 2, 3], [1, 3, 2], [2, 3, 1], 
                 [2, 1, 3], [3, 1, 2], [3, 2, 1]]
-        for i in 1:n
+        @threads for i in 1:n
             if (   (c.y1 <= data[loc[1], i] < c.y2) 
                 && (c.z1 <= data[loc[2], i] < c.z2) 
                 && (c.t11 <= data[loc[1]+3, i] <= c.t12)
@@ -153,13 +153,15 @@ function select_ggg!(data::Array{UInt32, 2},
                )
                 k = trunc(Int64, data[loc[3], i] / c.E_unit) + 1
                 if (k <= c.D[1])
-                    ml[k] += 1
+                    ml[threadid()][k] += 1
                 end
             end
         end
     end
     lock(matrix_lock) do
-        matrix .+= ml
+        for i in 1:nthreads()
+            matrix .+= ml[i]
+        end
     end
 end
 
@@ -247,6 +249,7 @@ function process(fin::HDF5File, gate_m::Array{Int64, 1},
     
     i_report = 0
     n_report = 10_000_000
+    workers = Array{Task, 1}()
     for m in multi
         dataset::HDF5Dataset = group[string(m)]
         n = size(dataset)[2]
@@ -258,6 +261,7 @@ function process(fin::HDF5File, gate_m::Array{Int64, 1},
         left_pos = 1
         is_something_left = true
         while is_something_left
+            filter!(w->!istaskdone(w), workers)
             right_pos = left_pos + chunk_size - 1
             if right_pos > n
                 right_pos = n
@@ -267,7 +271,7 @@ function process(fin::HDF5File, gate_m::Array{Int64, 1},
             end
             data = dataset[:, left_pos:right_pos]
 
-            @Threads.spawn select(data, matrix, c, matrix_lock)
+            push!(workers, @Threads.spawn select(data, matrix, c, matrix_lock))
 
             n_processed += right_pos - left_pos
 
@@ -284,6 +288,9 @@ function process(fin::HDF5File, gate_m::Array{Int64, 1},
 
             left_pos = right_pos + 1
         end
+    end
+    for w in workers
+        wait(w)
     end
     println()
     t1 = Dates.Time(Dates.now())

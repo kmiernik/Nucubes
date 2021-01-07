@@ -22,10 +22,12 @@ function save_h5(output_file, matrix, gate_y, gate_z, gate_m, prompt, delayed,
     data_name = "$z" * "_" * "$y" 
     if size(gate_m)[1] > 0
         data_name = data_name * "_m"
-        for mi in gate_m
+        for i in 1:length(gate_m)-1
+            mi = gate_m[i]
             data_name = data_name * "$mi" * "_"
         end
-        data_name = strip(data_name, '_')
+        mi = last(gate_m)
+        data_name = data_name * "$mi"
     end
 
     HDF5.h5e_set_auto(HDF5.H5E_DEFAULT, C_NULL, C_NULL)
