@@ -7,6 +7,7 @@ module Nucubes
 using HDF5
 using Dates
 using Printf
+using Base.Threads
 
 export process
 export Gate
@@ -113,15 +114,18 @@ end
 Calculate gamma-time distribution of all events
 """
 function select_t!(data::Array{UInt32, 2}, 
-                                    matrix::Array{Int64, 2}, 
-                                    c::TGate)
+                   matrix::Array{Int64, 2}, 
+                   c::TGate, 
+                   matrix_lock::ReentrantLock)
     n = size(data)[2]
     for i in 1:n
         for j in 1:3
             k = trunc(Int64, data[j, i] / c.E_unit) + 1
             t = trunc(Int64, data[j+3, i] / c.t_unit) + 1
-            if 1 <= k <= c.D[1] && 1 <= t <= c.D[2]
-                matrix[k, t] += 1
+            if k <= c.D[1] && t <= c.D[2]
+                lock(matrix_lock) do
+                    matrix[k, t] += k
+                end
             end
         end
     end
@@ -133,10 +137,12 @@ Calculate gamma-gamma-gamma gate with timing conditions (prompt/delayed)
 on all three gammas
 """
 function select_ggg!(data::Array{UInt32, 2}, 
-                      matrix::Array{Int64, 1}, 
-                      c::GGGate)
+                     matrix::Array{Int64, 1}, 
+                     c::GGGate, 
+                     matrix_lock::ReentrantLock)
+    ml = zeros(size(matrix))
     n = size(data)[2]
-    for loc in [[1, 2, 3], [1, 3, 2], [2, 3, 1], 
+    @inbounds for loc in [[1, 2, 3], [1, 3, 2], [2, 3, 1], 
                 [2, 1, 3], [3, 1, 2], [3, 2, 1]]
         for i in 1:n
             if (   (c.y1 <= data[loc[1], i] < c.y2) 
@@ -147,10 +153,13 @@ function select_ggg!(data::Array{UInt32, 2},
                )
                 k = trunc(Int64, data[loc[3], i] / c.E_unit) + 1
                 if (k <= c.D[1])
-                    matrix[k] += 1
+                    ml[k] += 1
                 end
             end
         end
+    end
+    lock(matrix_lock) do
+        matrix .+= ml
     end
 end
 
@@ -160,7 +169,8 @@ Calculate gamma-gamma gate returns gamma-time distribution
 """
 function select_ggt!(data::Array{UInt32, 2}, 
                       matrix::Array{Int64, 2}, 
-                      c::GGTGate)
+                      c::GGTGate,
+                      matrix_lock::ReentrantLock)
     n = size(data)[2]
     for loc in [[1, 2, 3], [1, 3, 2], [2, 3, 1], 
                                     [2, 1, 3], [3, 1, 2], [3, 2, 1]]
@@ -170,8 +180,10 @@ function select_ggt!(data::Array{UInt32, 2},
                )
                 k = trunc(Int64, data[loc[3], i] / c.E_unit) + 1
                 t = trunc(Int64, data[loc[3]+3, i] / c.t_unit) + 1
-                if 1 <= k <= c.D[1] && 1 <= t <= c.D[2]
-                    matrix[k, t] += 1
+                if k <= c.D[1] && t <= c.D[2]
+                    lock(matrix_lock) do
+                        matrix[k, t] += 1
+                    end
                 end
             end
         end
@@ -223,6 +235,7 @@ function process(fin::HDF5File, gate_m::Array{Int64, 1},
    
     matrix = Array{Int64, length(c.D)}(undef, c.D...)
     matrix = zero(matrix)
+    matrix_lock = Base.ReentrantLock()
     n_all = 0
     n_processed = 0
     for m in multi
@@ -233,7 +246,7 @@ function process(fin::HDF5File, gate_m::Array{Int64, 1},
     t0 = Dates.Time(Dates.now())
     
     i_report = 0
-    n_report = 1_000_000
+    n_report = 10_000_000
     for m in multi
         dataset::HDF5Dataset = group[string(m)]
         n = size(dataset)[2]
@@ -254,7 +267,7 @@ function process(fin::HDF5File, gate_m::Array{Int64, 1},
             end
             data = dataset[:, left_pos:right_pos]
 
-            select(data, matrix, c)
+            @Threads.spawn select(data, matrix, c, matrix_lock)
 
             n_processed += right_pos - left_pos
 
