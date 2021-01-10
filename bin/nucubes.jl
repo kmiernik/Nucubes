@@ -2,9 +2,7 @@ import HDF5
 import Dates
 using Distributed
 
-@everywhere include("/home/krm/Documents/Programs/Julia/nucubes/Nucubes.jl")
-import .Nucubes
-
+@everywhere import Nucubes
 
 function open_create_group(parent, group_name::String)
     try
