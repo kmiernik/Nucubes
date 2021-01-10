@@ -1,0 +1,8 @@
+name = "Nucubes"
+uuid = "4079cdd5-3ec5-4aed-8ef9-6cac8a65c69a"
+authors = ["Krzysztof Miernik <k.a.miernik@gmail.com>"]
+version = "0.1.0"
+
+[deps]
+Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
+HDF5 = "f67ccb44-e63f-5c2f-98bd-6dc0ccc4ba2f"

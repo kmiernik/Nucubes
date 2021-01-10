@@ -1,6 +1,7 @@
-
 """
 Repack  GeGeGe zipped, chunks 1e7 to unzipped, chunks 10000
+This speeds up operation time significantly (factor of 3) while
+file size is about 2-times bigger
 
 """
 

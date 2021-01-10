@@ -1,7 +1,10 @@
 """
 Test timing distrubutions 
-* gamma-time (for all events broken into multiplicities
+* gamma-time (for all events broken into multiplicities)
 * gamma-time for 606-423 gate (136Te)
+
+This may serve as multiplicty and prompt/delay condition selection
+clue
 
 """
 import HDF5
