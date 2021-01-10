@@ -1,5 +1,5 @@
 """
-Module for nugates analysis
+Module for NuBall cubic gates analysis
 Version with conditions and process functions
 """
 module Nucubes
@@ -18,10 +18,32 @@ export select_ggg!
 export select_ggt!
 export select_t!
 
-
+"""
+This is abstract Gate type that is passed to the process function
+The concrete type should define an array
+    D::Array{Int64, 1}
+with return array sizes (e.g. [4096] will result in 1D array of 4096 channels, 
+and [4096, 4096] will result in 2D array 4096*4096).
+And any other needed conditions. The Gate will be passed to the select
+function which will populate the return array and use conditions.
+"""
 abstract type Gate
 end
 
+"""
+Gate for gamma-gamma-gamma selection, the D should be single entry
+(e.g. [4096] or [2048]) which defines a histogram 1 keV/bin.
+Other fields are:
+    * y1 and y2 - gate range in the same units as in the file y1 <= x < y
+    * z1 and z2 - as above for the second gamma
+    * t11 and t12 - time range for the first gamma in units as in the data file
+                    t11 <= t1 <= t12
+    * t21 and t22 - as above for the second gamma
+    * t31 and t32 - as above for the third gamma
+    * E_unit - unit value to convert from data file to keV (e.g. 100, 
+                than value E(keV) = E / 100)
+    * t_unit - same for the time 
+"""
 struct GGGate <: Gate
     D::Array{Int64, 1}
     y1::Int64
@@ -38,7 +60,10 @@ struct GGGate <: Gate
     t_unit::Int64
 end
 
-
+"""
+Gate for creating gamma-time distribution for a given gamma-gamma condition
+see GGGate for more details on fields
+"""
 struct GGTGate <: Gate
     D::Array{Int64, 1}
     y1::Int64
@@ -50,6 +75,10 @@ struct GGTGate <: Gate
 end
 
 
+"""
+Gate for creating total gamma-time distribution for all gammas
+see GGGate for more details on fields
+"""
 struct TGate <: Gate
     D::Array{Int64, 1}
     E_unit::Int64
@@ -58,8 +87,16 @@ end
 
 
 """
+    GGGate(D::Array{Int64, 1},
+           gate_z::Array{Float64, 1}, 
+           gate_y::Array{Float64, 1}, 
+           prompt::Array{Float64, 1},
+           delayed::Array{Float64, 1},
+           ttype::String,
+           E_unit::Int64,
+           t_unit::Int64)
 Constructor of GGGate from ranges in keV and calculating
-Int ranges from Energy units used in file
+Int ranges for GGGate from energy and time units as used in the data file
 """
 function GGGate(D::Array{Int64, 1},
              gate_z::Array{Float64, 1}, 
@@ -92,6 +129,12 @@ end
 
 
 """
+    GGTGate(D::Array{Int64, 1},
+            gate_z::Array{Float64, 1}, 
+            gate_y::Array{Float64, 1}, 
+            E_unit::Int64,
+            t_unit::Int64)
+
 Constructor of GGTGate from ranges in keV and calculating
 Int ranges from Energy units used in file
 """
@@ -111,7 +154,12 @@ end
 
 
 """
-Calculate gamma-time distribution of all events
+    select_t!(data::Array{UInt32, 2}, 
+                   matrix::Array{Int64, 2}, 
+                   c::TGate, 
+                   matrix_lock::ReentrantLock)
+
+Calculate gamma-time distribution of all events, populates matrix (histogram)
 """
 function select_t!(data::Array{UInt32, 2}, 
                    matrix::Array{Int64, 2}, 
@@ -133,8 +181,13 @@ end
 
 
 """
+    select_ggg!(data::Array{UInt32, 2}, 
+                matrix::Array{Int64, 1}, 
+                c::GGGate, 
+                matrix_lock::ReentrantLock)
+
 Calculate gamma-gamma-gamma gate with timing conditions (prompt/delayed) 
-on all three gammas
+on all three gammas. Populates matrix (histogram).
 """
 function select_ggg!(data::Array{UInt32, 2}, 
                      matrix::Array{Int64, 1}, 
@@ -167,7 +220,13 @@ end
 
 
 """
-Calculate gamma-gamma gate returns gamma-time distribution
+    select_ggt!(data::Array{UInt32, 2}, 
+                      matrix::Array{Int64, 2}, 
+                      c::GGTGate,
+                      matrix_lock::ReentrantLock)
+
+Based on gamma-gamma gate calculate gamma-time distribution.
+Populates matrix (histogram).
 """
 function select_ggt!(data::Array{UInt32, 2}, 
                       matrix::Array{Int64, 2}, 
@@ -194,6 +253,9 @@ end
 
 
 """
+    process(input_file::String, gate_m::Array{Int64, 1}, 
+            c::Gate, select::Function)::Array{Int64, length(c.D)}
+
 This functions browses through all given muliplicity datasets
 and applies 'select' function with 'c' gate conditions.
 
@@ -202,9 +264,14 @@ and applies 'select' function with 'c' gate conditions.
           taken as lower limit, if length is 2 - low and high end, and
           any other, as a list of multiplicities
 * c: Gate type struct, must be given accordingly to the select function
-* select: function performing actual 
+* select: function performing actual calculations
+* returns Array as defined by c.D (e.g. if c.D = [4096] the return array
+   is 1D of 4096 channels)
 
-return Array of sizes c.D
+This function is multithreaded, so data loading and processing use separate
+threads (if possible), as well as process function may be multithreade
+for a given data subset.
+
 """        
 function process(input_file::String, gate_m::Array{Int64, 1}, 
                 c::Gate, select::Function)::Array{Int64, length(c.D)}
