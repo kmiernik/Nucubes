@@ -6,8 +6,8 @@ module Nucubes
 
 using HDF5
 using Dates
-using Printf
 using Base.Threads
+using Distributed
 
 export process
 export Gate
@@ -206,97 +206,112 @@ and applies 'select' function with 'c' gate conditions.
 
 return Array of sizes c.D
 """        
-function process(fin::HDF5File, gate_m::Array{Int64, 1}, 
+function process(input_file::String, gate_m::Array{Int64, 1}, 
                 c::Gate, select::Function)::Array{Int64, length(c.D)}
 
-    M = Int64[]
-    group::HDF5Group = fin["GeGeGe"]
-    for m_set in names(group)
-        append!(M, parse(Int64, m_set))
-    end
-
-    if size(gate_m)[1] == 0
-        multi = M
-    elseif size(gate_m)[1] == 1
-        multi = [max(gate_m[1], first(M)):last(M);]
-    elseif size(gate_m)[1] == 2
-        low_m = max(gate_m[1], first(M))
-        if low_m > last(M)
-            low_m = last(M)
-        end
-        high_m = min(gate_m[2], last(M))
-        multi = [low_m:high_m;]
-    else
-        multi = Int64[]
-        for m in gate_m
-            if first(M) < m < last(M)
-                append!(multi, m)
-            end
-        end
-    end
-   
     matrix = Array{Int64, length(c.D)}(undef, c.D...)
     matrix = zero(matrix)
-    matrix_lock = Base.ReentrantLock()
-    n_all = 0
-    n_processed = 0
-    for m in multi
-        dataset::HDF5Dataset = group[string(m)]
-        n_all += size(dataset)[2]
-    end
 
-    t0 = Dates.Time(Dates.now())
+    HDF5.h5open(input_file, "r") do fin
+        group::HDF5Group = fin["GeGeGe"]
+
+        M = Int64[]
+        for m_set in names(group)
+            append!(M, parse(Int64, m_set))
+        end
+
+        if size(gate_m)[1] == 0
+            multi = M
+        elseif size(gate_m)[1] == 1
+            multi = [max(gate_m[1], first(M)):last(M);]
+        elseif size(gate_m)[1] == 2
+            low_m = max(gate_m[1], first(M))
+            if low_m > last(M)
+                low_m = last(M)
+            end
+            high_m = min(gate_m[2], last(M))
+            multi = [low_m:high_m;]
+        else
+            multi = Int64[]
+            for m in gate_m
+                if first(M) < m < last(M)
+                    append!(multi, m)
+                end
+            end
+        end
     
-    i_report = 0
-    n_report = 10_000_000
-    workers = Array{Task, 1}()
-    for m in multi
-        dataset::HDF5Dataset = group[string(m)]
-        n = size(dataset)[2]
-        chunk_size = min(n, 10_000)
+        matrix_lock = Base.ReentrantLock()
+        n_all = 0
+        n_processed = 0
+        for m in multi
+            dataset::HDF5Dataset = group[string(m)]
+            n_all += size(dataset)[2]
+        end
+
+        t0 = Dates.Time(Dates.now())
+        
+        i_report = 0
+        n_report = 10_000_000
+        workers = Array{Task, 1}()
+        for m in multi
+            dataset::HDF5Dataset = group[string(m)]
+            n = size(dataset)[2]
+            chunk_size = min(n, 10_000)
+            try
+                chunk_size = HDF5.get_chunk(dataset)[2]
+            catch
+            end
+            left_pos = 1
+            is_something_left = true
+            while is_something_left
+                filter!(w->!istaskdone(w), workers)
+                right_pos = left_pos + chunk_size - 1
+                if right_pos > n
+                    right_pos = n
+                    is_something_left = false
+                elseif left_pos >= right_pos
+                    break
+                end
+                data = dataset[:, left_pos:right_pos]
+
+                push!(workers, @Threads.spawn select(data, matrix, c,
+                                                     matrix_lock))
+
+                n_processed += right_pos - left_pos
+
+                j_report = trunc(Int64, n_processed / n_report)
+                if j_report > i_report
+                    i_report += 1
+                    t1 = Dates.Time(Dates.now())
+                    dt = t1 - t0
+                    print("\r", round(n_processed / n_all * 100, digits=1), 
+                          "% ", round(dt.value * 1e-9, digits=1), " s (",
+                        round(dt.value * 1e-9 * n_all / n_processed, digits=0),
+                        " s)          ")
+                end
+
+                left_pos = right_pos + 1
+            end
+        end
+        for w in workers
+            wait(w)
+        end
+        t1 = Dates.Time(Dates.now())
+        dt = t1 - t0
+        print("\r+ gate")
         try
-            chunk_size = HDF5.get_chunk(dataset)[2]
+            print(" z:[", round(c.z1 / c.E_unit, digits=1), ", ",
+                          round(c.z2 / c.E_unit, digits=1), "]",
+                  " y:[", round(c.y1 / c.E_unit, digits=1), ", ",
+                          round(c.y2 / c.E_unit, digits=1), "]"
+                 )
         catch
         end
-        left_pos = 1
-        is_something_left = true
-        while is_something_left
-            filter!(w->!istaskdone(w), workers)
-            right_pos = left_pos + chunk_size - 1
-            if right_pos > n
-                right_pos = n
-                is_something_left = false
-            elseif left_pos >= right_pos
-                break
-            end
-            data = dataset[:, left_pos:right_pos]
-
-            push!(workers, @Threads.spawn select(data, matrix, c, matrix_lock))
-
-            n_processed += right_pos - left_pos
-
-            j_report = trunc(Int64, n_processed / n_report)
-            if j_report > i_report
-                i_report += 1
-                t1 = Dates.Time(Dates.now())
-                dt = t1 - t0
-                print("\r", round(n_processed / n_all * 100, digits=1), "% ",
-                    round(dt.value * 1e-9, digits=1), " s (",
-                    round(dt.value * 1e-9 * n_all / n_processed, digits=0),
-                    " s)          ")
-            end
-
-            left_pos = right_pos + 1
-        end
+        println(" m:", gate_m, " ", round(n_all / 1e6, digits=2), 
+                "M hits in ", round(dt.value * 1e-9, digits=1), " s @", myid())
     end
-    for w in workers
-        wait(w)
-    end
-    println()
-    t1 = Dates.Time(Dates.now())
-    dt = t1 - t0
-    @printf("%12d %8.5f\n", n_all, dt.value * 1.0e-9)
     return matrix
+
 end
 
 end
