@@ -317,8 +317,8 @@ function process(input_file::String, gate_m::Array{Int64, 1},
 
         t0 = Dates.Time(Dates.now())
         
-        i_report = 0
-        n_report = 10_000_000
+        #i_report = 0
+        #n_report = 10_000_000
         workers = Array{Task, 1}()
         for m in multi
             dataset::HDF5Dataset = group[string(m)]
@@ -346,16 +346,16 @@ function process(input_file::String, gate_m::Array{Int64, 1},
 
                 n_processed += right_pos - left_pos
 
-                j_report = trunc(Int64, n_processed / n_report)
-                if j_report > i_report
-                    i_report += 1
-                    t1 = Dates.Time(Dates.now())
-                    dt = t1 - t0
-                    print("\r", round(n_processed / n_all * 100, digits=1), 
-                          "% ", round(dt.value * 1e-9, digits=1), " s (",
-                        round(dt.value * 1e-9 * n_all / n_processed, digits=0),
-                        " s)          ")
-                end
+                #j_report = trunc(Int64, n_processed / n_report)
+                #if j_report > i_report
+                #    i_report += 1
+                #    t1 = Dates.Time(Dates.now())
+                #    dt = t1 - t0
+                #    print("\r", round(n_processed / n_all * 100, digits=1), 
+                #          "% ", round(dt.value * 1e-9, digits=1), " s (",
+                #        round(dt.value * 1e-9 * n_all / n_processed, digits=0),
+                #        " s)          ")
+                #end
 
                 left_pos = right_pos + 1
             end
@@ -365,7 +365,8 @@ function process(input_file::String, gate_m::Array{Int64, 1},
         end
         t1 = Dates.Time(Dates.now())
         dt = t1 - t0
-        print("\r+ gate")
+        #print("\r+ gate")
+        print("+ gate")
         try
             print(" z:[", round(c.z1 / c.E_unit, digits=1), ", ",
                           round(c.z2 / c.E_unit, digits=1), "]",

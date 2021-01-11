@@ -158,14 +158,3 @@ else
     println("   (16) delayed gate end (<=) (float) ")
     println("  Comment lines are indicated by '#' sign at the beginning")
 end
-
-# Types warnings
-#@InteractiveUtils.code_warntype XXX
-
-# Profiling
-#@profile XXX
-#Profile.print(format=:flat)
-#ProfileView.view()
-#println("Press enter")
-#s = readline()
-
