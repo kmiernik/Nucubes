@@ -280,10 +280,10 @@ function process(input_file::String, gate_m::Array{Int64, 1},
     matrix = zero(matrix)
 
     HDF5.h5open(input_file, "r") do fin
-        group::HDF5.Group = fin["GeGeGe"]
+        group = fin["GeGeGe"]
 
         M = Int64[]
-        for m_set in names(group)
+        for m_set in keys(group)
             append!(M, parse(Int64, m_set))
         end
 
@@ -311,7 +311,7 @@ function process(input_file::String, gate_m::Array{Int64, 1},
         n_all = 0
         n_processed = 0
         for m in multi
-            dataset::HDF5.Dataset = group[string(m)]
+            dataset = group[string(m)]
             n_all += size(dataset)[2]
         end
 
@@ -321,7 +321,7 @@ function process(input_file::String, gate_m::Array{Int64, 1},
         #n_report = 10_000_000
         workers = Array{Task, 1}()
         for m in multi
-            dataset::HDF5.Dataset = group[string(m)]
+            dataset = group[string(m)]
             n = size(dataset)[2]
             chunk_size = min(n, 10_000)
             try
