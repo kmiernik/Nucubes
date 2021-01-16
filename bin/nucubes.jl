@@ -65,7 +65,7 @@ function parse_input(gate_file::String)
     gates = []
     for line in eachline(gate_file)
         line = strip(line)
-        if startswith(line, "#")
+        if startswith(line, "#") || length(line) == 0
             continue
         end
         gate = Dict{String, Any}()
@@ -88,11 +88,11 @@ function parse_input(gate_file::String)
                             parse(Float64, words[16])]
 
             if gate["detectors"] == "ggg"
-                gate["ggg"] = Nucubes.GGGate([4096], gate["gate_z"],
+                gate["ggg"] = Nucubes.GG_G([4096], gate["gate_z"],
                                             gate["gate_y"], gate["prompt"],
                                             gate["delayed"], gate["ttype"],
                                             100, 1000)
-                gate["select"] = Nucubes.select_ggg!
+                gate["select"] = Nucubes.select_gg_g!
             else
                 println("Gate on detectors: \"", gate["detectors"], 
                         "\" not implemented")
@@ -118,7 +118,7 @@ function main(gate_file::String)
     gates = parse_input(gate_file)
     t0 = Dates.Time(Dates.now())
     results = pmap(gate->Nucubes.process(gate["input_file"], gate["gate_m"],
-                                        gate["ggg"], Nucubes.select_ggg!), 
+                                         gate["ggg"], gate["select"]), 
                    gates)
     t1 = Dates.Time(Dates.now())
     dt = t1 - t0

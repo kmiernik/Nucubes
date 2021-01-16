@@ -11,12 +11,12 @@ using Distributed
 
 export process
 export Gate
-export GGGate
-export GGTate
-export TGate
-export select_ggg!
-export select_ggt!
-export select_t!
+export GG_G
+export GG_GT
+export A_GT
+export select_gg_g!
+export select_gg_gt!
+export select_a_gt!
 
 """
 This is abstract Gate type that is passed to the process function
@@ -31,7 +31,7 @@ abstract type Gate
 end
 
 """
-Gate for gamma-gamma-gamma selection, the D should be single entry
+Gate for gamma-gamma -> gamma selection, the D should be single entry
 (e.g. [4096] or [2048]) which defines a histogram 1 keV/bin.
 Other fields are:
     * y1 and y2 - gate range in the same units as in the file y1 <= x < y
@@ -44,7 +44,7 @@ Other fields are:
                 than value E(keV) = E / 100)
     * t_unit - same for the time 
 """
-struct GGGate <: Gate
+struct GG_G <: Gate
     D::Array{Int64, 1}
     y1::Int64
     y2::Int64
@@ -60,11 +60,12 @@ struct GGGate <: Gate
     t_unit::Int64
 end
 
+
 """
 Gate for creating gamma-time distribution for a given gamma-gamma condition
-see GGGate for more details on fields
+see GG_G for more details on fields
 """
-struct GGTGate <: Gate
+struct GG_GT <: Gate
     D::Array{Int64, 1}
     y1::Int64
     y2::Int64
@@ -77,9 +78,9 @@ end
 
 """
 Gate for creating total gamma-time distribution for all gammas
-see GGGate for more details on fields
+see GG_G for more details on fields
 """
-struct TGate <: Gate
+struct A_GT <: Gate
     D::Array{Int64, 1}
     E_unit::Int64
     t_unit::Int64
@@ -87,7 +88,7 @@ end
 
 
 """
-    GGGate(D::Array{Int64, 1},
+    GG_G(D::Array{Int64, 1},
            gate_z::Array{Float64, 1}, 
            gate_y::Array{Float64, 1}, 
            prompt::Array{Float64, 1},
@@ -98,7 +99,7 @@ end
 Constructor of GGGate from ranges in keV and calculating
 Int ranges for GGGate from energy and time units as used in the data file
 """
-function GGGate(D::Array{Int64, 1},
+function GG_G(D::Array{Int64, 1},
              gate_z::Array{Float64, 1}, 
              gate_y::Array{Float64, 1}, 
              prompt::Array{Float64, 1},
@@ -124,21 +125,21 @@ function GGGate(D::Array{Int64, 1},
             push!(conditions, Int64(400 * t_unit))
         end
     end
-    GGGate(D, conditions..., E_unit, t_unit)
+    GG_G(D, conditions..., E_unit, t_unit)
 end
 
 
 """
-    GGTGate(D::Array{Int64, 1},
+    GG_GT(D::Array{Int64, 1},
             gate_z::Array{Float64, 1}, 
             gate_y::Array{Float64, 1}, 
             E_unit::Int64,
             t_unit::Int64)
 
-Constructor of GGTGate from ranges in keV and calculating
+Constructor of GG_GT from ranges in keV and calculating
 Int ranges from Energy units used in file
 """
-function GGTGate(D::Array{Int64, 1},
+function GG_GT(D::Array{Int64, 1},
              gate_z::Array{Float64, 1}, 
              gate_y::Array{Float64, 1}, 
              E_unit::Int64,
@@ -148,22 +149,22 @@ function GGTGate(D::Array{Int64, 1},
                   round(Int, gate_y[2] * E_unit),
                   round(Int, gate_z[1] * E_unit),
                   round(Int, gate_z[2] * E_unit)]
-    GGTGate(D, conditions..., E_unit, t_unit)
+    GG_GT(D, conditions..., E_unit, t_unit)
 end
 
 
 
 """
-    select_t!(data::Array{UInt32, 2}, 
+    select_a_gt!(data::Array{UInt32, 2}, 
                    matrix::Array{Int64, 2}, 
                    c::TGate, 
                    matrix_lock::ReentrantLock)
 
 Calculate gamma-time distribution of all events, populates matrix (histogram)
 """
-function select_t!(data::Array{UInt32, 2}, 
+function select_a_gt!(data::Array{UInt32, 2}, 
                    matrix::Array{Int64, 2}, 
-                   c::TGate, 
+                   c::A_GT, 
                    matrix_lock::ReentrantLock)
     n = size(data)[2]
     for i in 1:n
@@ -181,17 +182,17 @@ end
 
 
 """
-    select_ggg!(data::Array{UInt32, 2}, 
+    select_gg_g!(data::Array{UInt32, 2}, 
                 matrix::Array{Int64, 1}, 
-                c::GGGate, 
+                c::GG_G, 
                 matrix_lock::ReentrantLock)
 
-Calculate gamma-gamma-gamma gate with timing conditions (prompt/delayed) 
+Calculate gamma-gamma -> gamma gate with timing conditions (prompt/delayed) 
 on all three gammas. Populates matrix (histogram).
 """
-function select_ggg!(data::Array{UInt32, 2}, 
+function select_gg_g!(data::Array{UInt32, 2}, 
                      matrix::Array{Int64, 1}, 
-                     c::GGGate, 
+                     c::GG_G, 
                      matrix_lock::ReentrantLock)
     ml = [zeros(size(matrix)) for i in 1:nthreads()]
     n = size(data)[2]
@@ -220,7 +221,48 @@ end
 
 
 """
-    select_ggt!(data::Array{UInt32, 2}, 
+    select_g_gg!(data::Array{UInt32, 2}, 
+                matrix::Array{Int64, 2}, 
+                c::GG_G, 
+                matrix_lock::ReentrantLock)
+
+Calculate gamma -> gamma-gamma gate with timing conditions (prompt/delayed) 
+on all three gammas. Uses same gate as gamma-gamma -> gamma.
+Populates 2D matrix (histogram).
+"""
+function select_g_gg!(data::Array{UInt32, 2}, 
+                     matrix::Array{Int64, 2}, 
+                     c::GG_G, 
+                     matrix_lock::ReentrantLock)
+    ml = [zeros(size(matrix)) for i in 1:nthreads()]
+    n = size(data)[2]
+    @inbounds for loc in [[1, 2, 3], [1, 3, 2], [2, 3, 1], 
+                [2, 1, 3], [3, 1, 2], [3, 2, 1]]
+        @threads for i in 1:n
+            if (   (c.z1 <= data[loc[1], i] < c.z2) 
+                && (c.t11 <= data[loc[1]+3, i] <= c.t12)
+                && (c.t21 <= data[loc[2]+3, i] <= c.t22)
+                && (c.t31 <= data[loc[3]+3, i] <= c.t32)
+               )
+                k = trunc(Int64, data[loc[2], i] / c.E_unit) + 1
+                j = trunc(Int64, data[loc[3], i] / c.E_unit) + 1
+                if k <= c.D[1] && j <= c.D[2] && k <= c.D[2] && j <= c.D[1]
+                    ml[threadid()][k, j] += 1
+                    ml[threadid()][j, k] += 1
+                end
+            end
+        end
+    end
+    lock(matrix_lock) do
+        for i in 1:nthreads()
+            matrix .+= ml[i]
+        end
+    end
+end
+
+
+"""
+    select_gg_gt!(data::Array{UInt32, 2}, 
                       matrix::Array{Int64, 2}, 
                       c::GGTGate,
                       matrix_lock::ReentrantLock)
@@ -228,9 +270,9 @@ end
 Based on gamma-gamma gate calculate gamma-time distribution.
 Populates matrix (histogram).
 """
-function select_ggt!(data::Array{UInt32, 2}, 
+function select_gg_gt!(data::Array{UInt32, 2}, 
                       matrix::Array{Int64, 2}, 
-                      c::GGTGate,
+                      c::GG_GT,
                       matrix_lock::ReentrantLock)
     n = size(data)[2]
     for loc in [[1, 2, 3], [1, 3, 2], [2, 3, 1], 
@@ -274,7 +316,7 @@ for a given data subset.
 
 """        
 function process(input_file::String, gate_m::Array{Int64, 1}, 
-                c::Gate, select::Function)::Array{Int64, length(c.D)}
+                c::Gate, select::Function, verbose=false)::Array{Int64, length(c.D)}
 
     matrix = Array{Int64, length(c.D)}(undef, c.D...)
     matrix = zero(matrix)
@@ -317,8 +359,8 @@ function process(input_file::String, gate_m::Array{Int64, 1},
 
         t0 = Dates.Time(Dates.now())
         
-        #i_report = 0
-        #n_report = 10_000_000
+        i_report = 0
+        n_report = 10_000_000
         workers = Array{Task, 1}()
         for m in multi
             dataset = group[string(m)]
@@ -346,16 +388,18 @@ function process(input_file::String, gate_m::Array{Int64, 1},
 
                 n_processed += right_pos - left_pos
 
-                #j_report = trunc(Int64, n_processed / n_report)
-                #if j_report > i_report
-                #    i_report += 1
-                #    t1 = Dates.Time(Dates.now())
-                #    dt = t1 - t0
-                #    print("\r", round(n_processed / n_all * 100, digits=1), 
-                #          "% ", round(dt.value * 1e-9, digits=1), " s (",
-                #        round(dt.value * 1e-9 * n_all / n_processed, digits=0),
-                #        " s)          ")
-                #end
+                if verbose
+                    j_report = trunc(Int64, n_processed / n_report)
+                    if j_report > i_report
+                        i_report += 1
+                        t1 = Dates.Time(Dates.now())
+                        dt = t1 - t0
+                        print("\r", round(n_processed / n_all * 100, digits=1), 
+                            "% ", round(dt.value * 1e-9, digits=1), " s (",
+                        round(dt.value * 1e-9 * n_all / n_processed, digits=0),
+                            " s)          ")
+                    end
+                end
 
                 left_pos = right_pos + 1
             end
@@ -365,8 +409,7 @@ function process(input_file::String, gate_m::Array{Int64, 1},
         end
         t1 = Dates.Time(Dates.now())
         dt = t1 - t0
-        #print("\r+ gate")
-        print("+ gate")
+        print("\r+ gate")
         try
             print(" z:[", round(c.z1 / c.E_unit, digits=1), ", ",
                           round(c.z2 / c.E_unit, digits=1), "]",
