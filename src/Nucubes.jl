@@ -17,6 +17,7 @@ export A_GT
 export select_gg_g!
 export select_gg_gt!
 export select_a_gt!
+export select_a_gg!
 
 """
 This is abstract Gate type that is passed to the process function
@@ -157,7 +158,7 @@ end
 """
     select_a_gt!(data::Array{UInt32, 2}, 
                    matrix::Array{Int64, 2}, 
-                   c::TGate, 
+                   c::A_GT, 
                    matrix_lock::ReentrantLock)
 
 Calculate gamma-time distribution of all events, populates matrix (histogram)
@@ -176,6 +177,39 @@ function select_a_gt!(data::Array{UInt32, 2},
                     matrix[k, t] += k
                 end
             end
+        end
+    end
+end
+
+
+"""
+    select_a_gg!(data::Array{UInt32, 2}, 
+                 matrix::Array{Int64, 2}, 
+                 c::A_GT, 
+                 matrix_lock::ReentrantLock)
+
+Calculate gamma-gamma distribution of all events, populates matrix (histogram)
+uses A_GT gate (no condition)
+"""
+function select_a_gg!(data::Array{UInt32, 2}, 
+                   matrix::Array{Int64, 2}, 
+                   c::A_GT, 
+                   matrix_lock::ReentrantLock)
+    ml = [zeros(size(matrix)) for i in 1:nthreads()]
+    n = size(data)[2]
+    @inbounds for loc in [[1, 2], [1, 3], [2, 3]]
+        @threads for i in 1:n
+            k = trunc(Int64, data[loc[1], i] / c.E_unit) + 1
+            j = trunc(Int64, data[loc[2], i] / c.E_unit) + 1
+            if k <= c.D[1] && j <= c.D[2] && k <= c.D[2] && j <= c.D[1]
+                ml[threadid()][k, j] += 1
+                ml[threadid()][j, k] += 1
+            end
+        end
+    end
+    lock(matrix_lock) do
+        for i in 1:nthreads()
+            matrix .+= ml[i]
         end
     end
 end
