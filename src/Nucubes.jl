@@ -269,6 +269,7 @@ function select_g_gg!(data::Array{UInt32, 2},
                      c::GG_G, 
                      matrix_lock::ReentrantLock)
     ml = zeros(size(matrix))
+    n = size(data)[2]
     for loc in [[1, 2, 3], [1, 3, 2], [2, 3, 1], 
                 [2, 1, 3], [3, 1, 2], [3, 2, 1]]
         for i in 1:n
