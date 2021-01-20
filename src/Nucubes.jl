@@ -268,11 +268,11 @@ function select_g_gg!(data::Array{UInt32, 2},
                      matrix::Array{Int64, 2}, 
                      c::GG_G, 
                      matrix_lock::ReentrantLock)
-    ml = zeros(size(matrix))
+    ml = [zeros(size(matrix)) for i in 1:nthreads()]
     n = size(data)[2]
-    for loc in [[1, 2, 3], [1, 3, 2], [2, 3, 1], 
+    @inbounds for loc in [[1, 2, 3], [1, 3, 2], [2, 3, 1], 
                 [2, 1, 3], [3, 1, 2], [3, 2, 1]]
-        for i in 1:n
+        @threads for i in 1:n
             if (   (c.z1 <= data[loc[1], i] < c.z2) 
                 && (c.t11 <= data[loc[1]+3, i] <= c.t12)
                 && (c.t21 <= data[loc[2]+3, i] <= c.t22)
@@ -281,14 +281,16 @@ function select_g_gg!(data::Array{UInt32, 2},
                 k = trunc(Int64, data[loc[2], i] / c.E_unit) + 1
                 j = trunc(Int64, data[loc[3], i] / c.E_unit) + 1
                 if k <= c.D[1] && j <= c.D[2] && k <= c.D[2] && j <= c.D[1]
-                    ml[k, j] += 1
-                    ml[j, k] += 1
+                    ml[threadid()][k, j] += 1
+                    ml[threadid()][j, k] += 1
                 end
             end
         end
     end
     lock(matrix_lock) do
-        matrix .+= ml
+        for i in 1:nthreads()
+            matrix .+= ml[i]
+        end
     end
 end
 
