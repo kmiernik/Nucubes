@@ -88,7 +88,7 @@ function parse_input(gate_file::String)
                             parse(Float64, words[16])]
 
             if gate["detectors"] == "ggg"
-                gate["ggg"] = Nucubes.GG_G([4096], gate["gate_z"],
+                gate["ggg"] = Nucubes.GG_G([8192], gate["gate_z"],
                                             gate["gate_y"], gate["prompt"],
                                             gate["delayed"], gate["ttype"],
                                             100, 1000)
