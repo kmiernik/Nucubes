@@ -400,7 +400,7 @@ function process(input_file::String, gate_m::Array{Int64, 1},
         
         i_report = 0
         n_report = 10_000_000
-        #workers = Array{Task, 1}()
+        workers = Array{Task, 1}()
         for m in multi
             dataset = group[string(m)]
             n = size(dataset)[2]
@@ -412,9 +412,9 @@ function process(input_file::String, gate_m::Array{Int64, 1},
             left_pos = 1
             is_something_left = true
             while is_something_left
-                #filter!(w->!istaskdone(w), workers)
+                filter!(w->!istaskdone(w), workers)
                 right_pos = left_pos + chunk_size - 1
-                if right_pos > n
+                if right_pos >= n
                     right_pos = n
                     is_something_left = false
                 elseif left_pos >= right_pos
@@ -422,9 +422,16 @@ function process(input_file::String, gate_m::Array{Int64, 1},
                 end
                 data = dataset[:, left_pos:right_pos]
 
-                #push!(workers, @Threads.spawn select(data, matrix, c,
-                #                                     matrix_lock))
-                select(data, matrix, c, matrix_lock)
+                push!(workers, @Threads.spawn select(data, matrix, c,
+                                                     matrix_lock))
+                #select(data, matrix, c, matrix_lock)
+                
+                if size(workers)[1] >= nprocs() 
+                    for w in workers
+                        wait(w)
+                        break
+                    end
+                end
 
                 n_processed += right_pos - left_pos
 
@@ -444,9 +451,9 @@ function process(input_file::String, gate_m::Array{Int64, 1},
                 left_pos = right_pos + 1
             end
         end
-        #for w in workers
-        #    wait(w)
-        #end
+        for w in workers
+            wait(w)
+        end
         t1 = Dates.Time(Dates.now())
         dt = t1 - t0
         print("\r+ gate")
