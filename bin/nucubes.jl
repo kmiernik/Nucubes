@@ -1,6 +1,7 @@
 import HDF5
 import Dates
 using Distributed
+using TOML
 
 @everywhere import Nucubes
 
@@ -113,9 +114,65 @@ function parse_input(gate_file::String)
 end
 
 
-function main(gate_file::String)
+function parse_toml(tomlfile)
+    config = TOML.parsefile(tomlfile)
+    gates = Array{Dict{String, Any}, 1}(undef, 0)
+
+    conv = Dict("input" => "input_file", "output" => "output_file",
+                "target" => "target", "detectors" => "detectors",
+                "ttype" => "ttype", "m" => "gate_m", 
+                "prompt" => "prompt", "delayed" => "delayed")
+
+    default = Dict{String, Any}()
+    for c in conv
+        default[c.second] = config["default"][c.first]
+    end
+
+    for entry in config["gate"]
+        if haskey(entry.second, "valid")
+            if !entry.second["valid"]
+                continue
+            end
+        end
+        gate = copy(default)
+        gate["isotope"] = entry.second["isotope"]
+        
+        for x in ["z", "y"]
+            if isa(entry.second[x], Vector)
+                gate["gate_" * x] = entry.second["z"]
+            elseif isa(entry.second[x], Number)
+                hw = config["default"]["halfwidth"]
+                if haskey(entry.second, "halfwidth")
+                    hw = entry.second["halfwidth"]
+                end
+                gate["gate_" * x] = [entry.second[x] - hw, 
+                                     entry.second[x] + hw]
+            end
+        end
+
+        for par in keys(entry.second)
+            if par in keys(conv)
+                gate[conv[par]] = entry.second[par]
+            end
+        end
+
+        gate["ggg"] = Nucubes.GG_G([8192], gate["gate_z"],
+                                    gate["gate_y"], gate["prompt"],
+                                    gate["delayed"], gate["ttype"],
+                                    100, 1000)
+        gate["select"] = Nucubes.select_gg_g!
+        println("* gate ", gate["target"], " ", gate["isotope"], " ",
+                gate["ttype"], " z:", gate["gate_z"], " y:", gate["gate_y"],
+                " m:", gate["gate_m"], " added")
+        push!(gates, gate)
+    end
+    gates
+end
+
+
+function main(gate_file)
     
-    gates = parse_input(gate_file)
+    gates = parse_toml(gate_file)
     t0 = Dates.Time(Dates.now())
     results = pmap(gate->Nucubes.process(gate["input_file"], gate["gate_m"],
                                          gate["ggg"], gate["select"]), 
@@ -137,24 +194,5 @@ end
 if length(ARGS) >= 1
     main(ARGS[1])
 else
-    println("USAGE: nucubes.jl gate_file.txt")
-    println()
-    println("Where gate_file contain the following space separated columns")
-    println("   (1) input HDF5 file name (string) ")
-    println("   (2) output HDF5 file name (string) ")
-    println("   (3) target alias (string) ")
-    println("   (4) isotope of interest  (string) ")
-    println("   (5) detectors (ggg, ggl, gll)  (string) ")
-    println("   (6) timing gate type (aaa, ppp, ppd, pdd, ddd) (string) ")
-    println("   (7) Z-axis gate begin (>=) (float) ")
-    println("   (8) Z-axis gate end (<) (float) ")
-    println("   (9) Y-axis gate begin (>=) (float) ")
-    println("   (10) Y-axis gate end (<) (float) ")
-    println("   (11) multiplicity gate begin (>=) (int) ")
-    println("   (12) multiplicity gate end (<=) (int) ")
-    println("   (13) prompt gate begin (>=) (float) ")
-    println("   (14) prompt gate end (<=) (float) ")
-    println("   (15) delayed gate begin (>=) (float) ")
-    println("   (16) delayed gate end (<=) (float) ")
-    println("  Comment lines are indicated by '#' sign at the beginning")
+    println("USAGE: nucubes.jl gate_file.toml")
 end

@@ -1,0 +1,46 @@
+# Set default values for these parameters
+[default]
+    input = "u238_m_ggg.h5"
+    output = "aaa.h5"
+    target = "u"
+    detectors = "ggg"
+    ttype = "ppp"
+    halfwidth = 1.0
+    m = [3, 9]
+    prompt = [20.0, 60.0]
+    delayed = [80.0 400.0]
+
+# Each gate always needs "z", "y" and "isotope"
+# Each gate has some unique identifier (anything)
+[gate.1]
+    z = 606.6
+    y = 423.4
+    isotope = "te136"
+    comment = "4+->2+->0+"
+
+# valid = false can be used to skip the gate (valid = true is default)
+[gate.1a]
+    z = 606.6
+    y = 423.4
+    isotope = "te136"
+    comment = "4+->2+->0+"
+    valid = false
+
+# Default parameters can be overwritten for a given gate
+[gate.2]
+    input = "th232_m_ggg.h5"
+    target = "th"
+    z = 423.4
+    y = 352.3
+    isotope = "te136"
+    m = [4, 9]
+    comment = "4+->2+->0+"
+
+# If z/y is number the gate is +/- halfwidth, if it is vector, it will be
+# used as is
+[gate.3]
+    z = [422.4, 425.4]
+    y = 352.3
+    isotope = "te136"
+    ttype = "ppd"
+    comment = "4+->2+->0+"
