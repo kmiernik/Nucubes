@@ -8,7 +8,7 @@
     halfwidth = 1.0
     m = [3, 9]
     prompt = [20.0, 60.0]
-    delayed = [80.0 400.0]
+    delayed = [80.0, 400.0]
 
 # Each gate always needs "z", "y" and "isotope"
 # Each gate has some unique identifier (anything)
