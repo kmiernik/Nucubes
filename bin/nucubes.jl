@@ -139,7 +139,7 @@ function parse_toml(tomlfile)
         
         for x in ["z", "y"]
             if isa(entry.second[x], Vector)
-                gate["gate_" * x] = entry.second["z"]
+                gate["gate_" * x] = entry.second[x]
             elseif isa(entry.second[x], Number)
                 hw = config["default"]["halfwidth"]
                 if haskey(entry.second, "halfwidth")
